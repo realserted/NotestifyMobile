@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,12 +12,19 @@ import {
 } from 'react-native';
 import { Link } from 'expo-router';
 
+import {
+  TurnstileCaptcha,
+  captchaEnabled,
+  type CaptchaHandle,
+} from '../../components/TurnstileCaptcha';
 import { supabase } from '../../lib/supabase';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<CaptchaHandle>(null);
 
   async function handleSignIn() {
     if (!email.trim() || !password) {
@@ -29,10 +36,14 @@ export default function LoginScreen() {
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
+      options: captchaToken ? { captchaToken } : undefined,
     });
     setIsSubmitting(false);
 
     if (error) {
+      // The token is spent whether or not the credentials were right, so always
+      // pull a fresh challenge before the next attempt.
+      captchaRef.current?.reset();
       Alert.alert('Could not sign in', error.message);
       return;
     }
@@ -40,6 +51,8 @@ export default function LoginScreen() {
     // No manual navigation needed — onAuthStateChange in the root layout picks
     // up the new session and redirects out of the (auth) group.
   }
+
+  const awaitingCaptcha = captchaEnabled && !captchaToken;
 
   return (
     <KeyboardAvoidingView
@@ -77,18 +90,22 @@ export default function LoginScreen() {
           onSubmitEditing={handleSignIn}
         />
 
+        <TurnstileCaptcha ref={captchaRef} onToken={setCaptchaToken} />
+
         <Pressable
           style={({ pressed }) => [
             styles.button,
-            (pressed || isSubmitting) && styles.buttonPressed,
+            (pressed || isSubmitting || awaitingCaptcha) && styles.buttonPressed,
           ]}
           onPress={handleSignIn}
-          disabled={isSubmitting}
+          disabled={isSubmitting || awaitingCaptcha}
         >
           {isSubmitting ? (
             <ActivityIndicator color="#ffffff" />
           ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
+            <Text style={styles.buttonText}>
+              {awaitingCaptcha ? 'Verifying…' : 'Sign In'}
+            </Text>
           )}
         </Pressable>
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,12 +12,19 @@ import {
 } from 'react-native';
 import { Link } from 'expo-router';
 
+import {
+  TurnstileCaptcha,
+  captchaEnabled,
+  type CaptchaHandle,
+} from '../../components/TurnstileCaptcha';
 import { supabase } from '../../lib/supabase';
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<CaptchaHandle>(null);
 
   async function handleSignUp() {
     if (!email.trim() || !password) {
@@ -29,10 +36,13 @@ export default function SignupScreen() {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
+      options: captchaToken ? { captchaToken } : undefined,
     });
     setIsSubmitting(false);
 
     if (error) {
+      // Tokens are single-use, so refresh the challenge before a retry.
+      captchaRef.current?.reset();
       Alert.alert('Could not sign up', error.message);
       return;
     }
@@ -46,6 +56,8 @@ export default function SignupScreen() {
       'We sent you a confirmation link. Confirm your address, then sign in.',
     );
   }
+
+  const awaitingCaptcha = captchaEnabled && !captchaToken;
 
   return (
     <KeyboardAvoidingView
@@ -83,18 +95,22 @@ export default function SignupScreen() {
           onSubmitEditing={handleSignUp}
         />
 
+        <TurnstileCaptcha ref={captchaRef} onToken={setCaptchaToken} />
+
         <Pressable
           style={({ pressed }) => [
             styles.button,
-            (pressed || isSubmitting) && styles.buttonPressed,
+            (pressed || isSubmitting || awaitingCaptcha) && styles.buttonPressed,
           ]}
           onPress={handleSignUp}
-          disabled={isSubmitting}
+          disabled={isSubmitting || awaitingCaptcha}
         >
           {isSubmitting ? (
             <ActivityIndicator color="#ffffff" />
           ) : (
-            <Text style={styles.buttonText}>Create Account</Text>
+            <Text style={styles.buttonText}>
+              {awaitingCaptcha ? 'Verifying…' : 'Create Account'}
+            </Text>
           )}
         </Pressable>
 
