@@ -6,11 +6,11 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import {
@@ -20,6 +20,9 @@ import {
 } from '../../components/TurnstileCaptcha';
 import { OAuthCancelledError, oauthRedirectUri, signInWithProvider } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
+import { Pop } from '../../components/Pop';
+import { useTheme } from '../../theme/ThemeProvider';
+import { layout, pop, radius, type } from '../../theme/tokens';
 
 const GoogleMark = () => (
   <Svg viewBox="0 0 18 18" width={18} height={18}>
@@ -40,25 +43,33 @@ const GoogleMark = () => (
 );
 
 /**
- * Sign-in screen.
+ * Sign in. Screen 12 of the spec.
  *
- * Google is the primary path and needs no captcha, so it keeps working even if
- * the web app is unreachable. The email form sits behind a disclosure: mounting
- * the Turnstile WebView is what couples this screen to notestify.com, so only
- * people who actually use a password pay that cost.
+ * Both paths are live: Google needs no captcha, and the password form needs a
+ * Turnstile token because Supabase enforces CAPTCHA protection project-wide on
+ * every email-based endpoint.
  *
- * There is no sign-up here by design — new accounts come from Google, or from
- * registering on the web.
+ * The captcha WebView mounts lazily, on first focus of either field. Loading it
+ * eagerly would tie a Google sign-in to notestify.com being reachable, which is
+ * exactly the coupling the OAuth path exists to avoid.
+ *
+ * Omitted from the mockup deliberately: "Forgot password?" and "Register" —
+ * neither route exists in this app. Registration happens on the web or by
+ * signing in with Google.
  */
 export default function LoginScreen() {
-  const [mode, setMode] = useState<'choose' | 'email'>('choose');
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
   const [busy, setBusy] = useState<'google' | 'email' | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaMounted, setCaptchaMounted] = useState(false);
   const captchaRef = useRef<CaptchaHandle>(null);
 
-  const awaitingCaptcha = mode === 'email' && captchaEnabled && !captchaToken;
+  const awaitingCaptcha = captchaMounted && captchaEnabled && !captchaToken;
 
   async function handleGoogle() {
     setBusy('google');
@@ -100,193 +111,169 @@ export default function LoginScreen() {
     }
   }
 
+  const field = (
+    label: string,
+    value: string,
+    onChangeText: (next: string) => void,
+    name: 'email' | 'password',
+    extra: React.ComponentProps<typeof TextInput>,
+  ) => (
+    <View>
+      <Text style={[type.micro, { color: t.muted, marginBottom: 7 }]}>{label}</Text>
+      <Pop offset={focusedField === name ? pop.sm : 0} radius={radius.md}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          onFocus={() => {
+            setFocusedField(name);
+            setCaptchaMounted(true);
+          }}
+          onBlur={() => setFocusedField((f) => (f === name ? null : f))}
+          placeholderTextColor={t.muted}
+          editable={busy === null}
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 15,
+            fontSize: 16,
+            fontFamily: type.body.fontFamily,
+            color: t.ink,
+          }}
+          {...extra}
+        />
+      </Pop>
+    </View>
+  );
+
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={{ flex: 1, backgroundColor: t.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Notestify</Text>
-        <Text style={styles.subtitle}>Sign in to pick up where you left off.</Text>
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: insets.top + 12,
+          paddingBottom: insets.bottom + 24,
+          paddingHorizontal: layout.screenPadWide,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View
+            style={{
+              width: 16,
+              height: 16,
+              borderRadius: 5,
+              borderWidth: layout.borderWidth,
+              borderColor: t.ink,
+              backgroundColor: t.accent,
+            }}
+          />
+          <Text style={[type.deckTitle, { fontSize: 22, color: t.ink }]}>Notestify</Text>
+        </View>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.googleButton,
-            (pressed || busy !== null) && styles.pressed,
-          ]}
-          onPress={handleGoogle}
-          disabled={busy !== null}
-        >
-          {busy === 'google' ? (
-            <ActivityIndicator color="#374151" />
-          ) : (
-            <>
-              <GoogleMark />
-              <Text style={styles.googleText}>Continue with Google</Text>
-            </>
-          )}
-        </Pressable>
+        <View style={{ marginTop: 48 }}>
+          <Text style={[type.screenTitle, { fontSize: 36, lineHeight: 39, color: t.ink }]}>
+            Welcome back
+          </Text>
+          <Text style={[type.bodyLarge, { fontSize: 15.5, color: t.body, marginTop: 8 }]}>
+            Pick up where you left off.
+          </Text>
+        </View>
 
-        {mode === 'choose' ? (
-          <Pressable onPress={() => setMode('email')} disabled={busy !== null}>
-            <Text style={styles.switchLink}>Sign in with email instead</Text>
-          </Pressable>
-        ) : (
-          <>
-            <View style={styles.divider}>
-              <View style={styles.rule} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.rule} />
-            </View>
+        <View style={{ gap: layout.gap, marginTop: 32 }}>
+          {field('Email', email, setEmail, 'email', {
+            placeholder: 'you@uni.edu',
+            autoCapitalize: 'none',
+            autoComplete: 'email',
+            keyboardType: 'email-address',
+            textContentType: 'emailAddress',
+          })}
+          {field('Password', password, setPassword, 'password', {
+            placeholder: '••••••••',
+            autoCapitalize: 'none',
+            autoComplete: 'current-password',
+            textContentType: 'password',
+            secureTextEntry: true,
+            onSubmitEditing: handleEmail,
+          })}
+        </View>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              placeholderTextColor="#9ca3af"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              editable={busy === null}
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor="#9ca3af"
-              value={password}
-              onChangeText={setPassword}
-              autoCapitalize="none"
-              autoComplete="current-password"
-              textContentType="password"
-              secureTextEntry
-              editable={busy === null}
-              onSubmitEditing={handleEmail}
-            />
-
+        {captchaMounted ? (
+          <View style={{ marginTop: 14 }}>
             <TurnstileCaptcha ref={captchaRef} onToken={setCaptchaToken} />
+          </View>
+        ) : null}
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.emailButton,
-                (pressed || busy !== null || awaitingCaptcha) && styles.pressed,
-              ]}
-              onPress={handleEmail}
-              disabled={busy !== null || awaitingCaptcha}
-            >
-              {busy === 'email' ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text style={styles.emailButtonText}>
-                  {awaitingCaptcha ? 'Verifying…' : 'Sign In'}
-                </Text>
-              )}
-            </Pressable>
-          </>
-        )}
+        <View style={{ marginTop: 'auto', paddingTop: 32, gap: layout.gap }}>
+          <Pressable
+            onPress={handleEmail}
+            disabled={busy !== null || awaitingCaptcha}
+            style={{ opacity: busy !== null || awaitingCaptcha ? 0.55 : 1 }}
+          >
+            {({ pressed }) => (
+              <Pop
+                offset={pop.md}
+                radius={radius.pill}
+                fill={t.primary}
+                pressed={pressed && busy === null && !awaitingCaptcha}
+              >
+                <View style={{ minHeight: 54, alignItems: 'center', justifyContent: 'center' }}>
+                  {busy === 'email' ? (
+                    <ActivityIndicator color={t.onPrimary} />
+                  ) : (
+                    <Text style={[type.button, { color: t.onPrimary }]}>
+                      {awaitingCaptcha ? 'Verifying…' : 'Sign in'}
+                    </Text>
+                  )}
+                </View>
+              </Pop>
+            )}
+          </Pressable>
 
-        {/* Dev only. This exact string must be allowed in the Supabase
-            dashboard, otherwise Supabase falls back to the Site URL and the
-            browser lands on the web app instead of returning here. */}
-        {__DEV__ ? <Text style={styles.debug}>{oauthRedirectUri}</Text> : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ flex: 1, height: 2, backgroundColor: t.divider }} />
+            <Text style={[type.micro, { color: t.muted }]}>or</Text>
+            <View style={{ flex: 1, height: 2, backgroundColor: t.divider }} />
+          </View>
+
+          <Pressable onPress={handleGoogle} disabled={busy !== null}>
+            {({ pressed }) => (
+              <Pop offset={0} radius={radius.pill} style={{ opacity: pressed ? 0.6 : 1 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                    minHeight: 54,
+                  }}
+                >
+                  {busy === 'google' ? (
+                    <ActivityIndicator color={t.ink} />
+                  ) : (
+                    <>
+                      <GoogleMark />
+                      <Text style={[type.button, { fontSize: 15.5, color: t.ink }]}>
+                        Continue with Google
+                      </Text>
+                    </>
+                  )}
+                </View>
+              </Pop>
+            )}
+          </Pressable>
+
+          {/* Dev only. This exact string must be allowed in the Supabase
+              dashboard, otherwise Supabase falls back to the Site URL and the
+              browser lands on the web app instead of returning here. */}
+          {__DEV__ ? (
+            <Text style={[type.meta, { color: t.divider, textAlign: 'center' }]}>
+              {oauthRedirectUri}
+            </Text>
+          ) : null}
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  content: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-    gap: 12,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#6b7280',
-    marginBottom: 20,
-  },
-  googleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    minHeight: 50,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    paddingVertical: 14,
-    backgroundColor: '#ffffff',
-  },
-  googleText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  switchLink: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4f46e5',
-    textAlign: 'center',
-    marginTop: 12,
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginVertical: 8,
-  },
-  rule: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#e5e7eb',
-  },
-  dividerText: {
-    fontSize: 13,
-    color: '#9ca3af',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#111827',
-    backgroundColor: '#ffffff',
-  },
-  emailButton: {
-    minHeight: 50,
-    backgroundColor: '#4f46e5',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emailButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  pressed: {
-    opacity: 0.6,
-  },
-  debug: {
-    fontSize: 11,
-    color: '#c4c9d2',
-    textAlign: 'center',
-    marginTop: 24,
-  },
-});

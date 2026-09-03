@@ -1,85 +1,228 @@
-import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Link } from 'expo-router';
+import { Flame } from 'lucide-react-native';
 
-import { supabase } from '../../lib/supabase';
+import { Pop, PopCard, PopChip, PopSegments } from '../../components/Pop';
+import { useTheme } from '../../theme/ThemeProvider';
+import { layout, pop, radius, type } from '../../theme/tokens';
 
 /**
- * Dashboard placeholder. Confirms the session is live end-to-end by showing the
- * signed-in email; real content lands here in the next pass.
+ * Today. The reference screen — it establishes the shell, the spacing rhythm
+ * and the token usage that every other screen inherits.
+ *
+ * PLACEHOLDER DATA. Every figure below is hardcoded and wired to nothing;
+ * replace it with the dashboard service. Do NOT invent fields that do not
+ * exist yet — the daily goal in particular needs a per-day reviewed count that
+ * no query currently returns.
  */
-export default function DashboardScreen() {
-  const [email, setEmail] = useState<string | null>(null);
+const PLACEHOLDER = {
+  firstName: 'June',
+  dueToday: 34,
+  streak: 12,
+  reviewedToday: 18,
+  dailyGoal: 30,
+  dateLabel: 'Thursday, 3 September',
+  week: [62, 88, 40, 74, 96, 30, 55],
+};
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? null);
-    });
-  }, []);
+export default function TodayScreen() {
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
 
-  async function handleSignOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      Alert.alert('Could not sign out', error.message);
-    }
-    // The root layout's onAuthStateChange handles the redirect back to /login.
-  }
+  const { firstName, dueToday, streak, reviewedToday, dailyGoal, dateLabel, week } = PLACEHOLDER;
+
+  const decks = [
+    { id: '1', title: 'Cell Biology', due: 18, cards: 96, color: t.accent },
+    { id: '2', title: 'Sentiment Analysis', due: 11, cards: 64, color: '#B0703A' },
+    { id: '3', title: 'Research Methods', due: 5, cards: 40, color: t.accentSoft },
+  ];
+
+  const best = Math.max(...week);
+  const goalFilled = Math.round((reviewedToday / dailyGoal) * 15);
+  const remaining = Math.max(0, dailyGoal - reviewedToday);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Dashboard</Text>
-      <Text style={styles.body}>
-        {email ? `Signed in as ${email}` : 'Loading your account\u2026'}
-      </Text>
-      <Text style={styles.note}>
-        Notes, decks, and reviews will show up here.
-      </Text>
-
-      <Pressable
-        style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-        onPress={handleSignOut}
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + 12,
+          paddingHorizontal: layout.screenPad,
+          paddingBottom: 24,
+          gap: layout.gap,
+        }}
       >
-        <Text style={styles.buttonText}>Sign Out</Text>
-      </Pressable>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[type.screenTitle, { color: t.ink }]}>Hey, {firstName}</Text>
+            <Text style={[type.body, { color: t.body, marginTop: 5 }]}>{dateLabel}</Text>
+          </View>
+          <PopChip
+            label={`${streak} days`}
+            fill={t.accent}
+            icon={<Flame size={13} color={t.ink} strokeWidth={2.4} />}
+          />
+        </View>
+
+        <PopCard fill={t.primary} offset={pop.lg} radius={radius.xl}>
+          <View style={{ padding: 22 }}>
+            <Text style={[type.micro, { color: t.onDark }]}>Due today</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginTop: 6 }}>
+              <Text style={[type.numeralXL, { color: t.surface }]}>{dueToday}</Text>
+              <Text style={[type.body, { color: t.onDark, paddingBottom: 8 }]}>
+                {/* Roughly 3 cards a minute. */}
+                cards · about {Math.ceil(dueToday / 3)} min
+              </Text>
+            </View>
+
+            {/* asChild needs a child that accepts onPress — a plain View would
+                swallow it and leave the CTA dead. */}
+            <Link href="/review" asChild>
+              <Pressable
+                accessibilityRole="button"
+                style={{
+                  marginTop: 18,
+                  minHeight: layout.minTap,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 14,
+                  borderRadius: radius.pill,
+                  borderWidth: layout.borderWidth,
+                  borderColor: t.ink,
+                  backgroundColor: t.accent,
+                }}
+              >
+                <Text style={[type.button, { color: t.ink }]}>Start reviewing</Text>
+              </Pressable>
+            </Link>
+          </View>
+        </PopCard>
+
+        <PopCard>
+          <View style={{ padding: 18 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+              }}
+            >
+              <Text style={[type.sectionTitle, { color: t.ink }]}>Today&apos;s goal</Text>
+              <Text style={[type.buttonSmall, { color: t.body }]}>
+                {reviewedToday} / {dailyGoal}
+              </Text>
+            </View>
+            <View style={{ marginTop: 12 }}>
+              <PopSegments
+                count={15}
+                filled={goalFilled}
+                fillColor={t.primary}
+                emptyColor={t.track}
+              />
+            </View>
+            <Text style={[type.meta, { color: t.muted, marginTop: 10 }]}>
+              {remaining} to go — finish and your streak hits {streak + 1}.
+            </Text>
+          </View>
+        </PopCard>
+
+        <View>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              marginBottom: 10,
+            }}
+          >
+            <Text style={[type.sectionTitle, { color: t.ink }]}>Jump back in</Text>
+            <Link href="/decks" style={[type.buttonSmall, { color: t.accentText }]}>
+              All decks
+            </Link>
+          </View>
+          <View style={{ gap: 10 }}>
+            {decks.map((d) => (
+              <Pop key={d.id} radius={radius.md}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 13,
+                    padding: 12,
+                    minHeight: layout.minTap,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 11,
+                      borderWidth: layout.borderWidth,
+                      borderColor: t.ink,
+                      backgroundColor: d.color,
+                    }}
+                  />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[type.rowTitle, { color: t.ink }]}>{d.title}</Text>
+                    <Text style={[type.meta, { color: t.muted, marginTop: 2 }]}>
+                      {d.due} due · {d.cards} cards
+                    </Text>
+                  </View>
+                  <Pop
+                    offset={d.due > 0 ? pop.xs : 0}
+                    radius={radius.pill}
+                    fill={d.due > 0 ? t.primary : t.surface}
+                  >
+                    <View style={{ paddingHorizontal: 15, paddingVertical: 9 }}>
+                      <Text style={[type.buttonSmall, { color: d.due > 0 ? t.onPrimary : t.ink }]}>
+                        Study
+                      </Text>
+                    </View>
+                  </Pop>
+                </View>
+              </Pop>
+            ))}
+          </View>
+        </View>
+
+        <PopCard>
+          <View style={{ padding: 18 }}>
+            <Text style={[type.sectionTitle, { color: t.ink }]}>This week</Text>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'flex-end',
+                gap: 8,
+                height: 78,
+                marginTop: 14,
+              }}
+            >
+              {week.map((v, i) => (
+                <View key={i} style={{ flex: 1, alignItems: 'center', gap: 6 }}>
+                  <View
+                    style={{
+                      width: '100%',
+                      height: Math.round(v * 0.52),
+                      borderRadius: 7,
+                      borderWidth: layout.borderWidth,
+                      borderColor: t.ink,
+                      backgroundColor: v === best ? t.accent : t.primary,
+                    }}
+                  />
+                  <Text style={[type.tabLabel, { color: t.muted }]}>{'MTWTFSS'[i]}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </PopCard>
+      </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    gap: 8,
-    backgroundColor: '#ffffff',
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  body: {
-    fontSize: 15,
-    color: '#374151',
-  },
-  note: {
-    fontSize: 14,
-    color: '#9ca3af',
-    marginTop: 4,
-  },
-  button: {
-    marginTop: 24,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-  },
-  buttonPressed: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#374151',
-  },
-});

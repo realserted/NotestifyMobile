@@ -1,24 +1,28 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, useColorScheme, View } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import type { Session } from '@supabase/supabase-js';
 
 import { supabase } from '../lib/supabase';
+import { ThemeProvider } from '../theme/ThemeProvider';
+import { useAppFonts } from '../theme/fonts';
+import { dark, light } from '../theme/tokens';
 
 /**
- * Root layout. Owns the auth session and acts as the redirect gate for every
- * route in the app:
- *
- *   - no session, outside the (auth) group  -> send to /login
- *   - session, inside the (auth) group      -> send to the dashboard
- *
- * Rendering `<Slot />` (rather than a `<Stack />`) keeps this layout purely a
- * pass-through; the nested (app) layout owns the actual navigator.
+ * Root layout. The auth gate is unchanged from the original; the additions are
+ * font loading, the theme provider, and the gesture root that the
+ * swipe-to-grade flashcard needs.
  */
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const fontsLoaded = useAppFonts();
+
+  const scheme = useColorScheme();
+  const t = scheme === 'dark' ? dark : light;
 
   const segments = useSegments();
   const router = useRouter();
@@ -26,15 +30,12 @@ export default function RootLayout() {
   useEffect(() => {
     let isMounted = true;
 
-    // Read whatever session AsyncStorage already has (this is what makes the
-    // user stay logged in between app launches).
     supabase.auth.getSession().then(({ data }) => {
       if (!isMounted) return;
       setSession(data.session);
       setIsLoading(false);
     });
 
-    // Then keep it in sync — covers sign in, sign out, and token refresh.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
@@ -50,8 +51,6 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    // Wait for the session check — redirecting first would bounce a logged-in
-    // user to /login for a frame on every cold start.
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
@@ -63,27 +62,24 @@ export default function RootLayout() {
     }
   }, [session, isLoading, segments, router]);
 
-  if (isLoading) {
+  // Hold until fonts AND session are ready. A system-font first frame breaks
+  // the display type's tight tracking badly enough to look like a bug.
+  if (isLoading || !fontsLoaded) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg }}>
+        <ActivityIndicator size="large" color={t.accent} />
       </View>
     );
   }
 
   return (
-    <>
-      <StatusBar style="dark" />
-      <Slot />
-    </>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+          <Slot />
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-  },
-});
