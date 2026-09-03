@@ -22,6 +22,25 @@ export const light = {
   muted: '#8A6E55',
   body: '#5A4331',
   onDark: '#E4C9A8',    // muted text on an espresso surface
+
+  /**
+   * Text colour for headings and titles on bg/surface.
+   *
+   * Distinct from `ink`, which is the border and shadow colour. In light they
+   * happen to be the same value; in dark they diverge completely — ink stays
+   * near-black for borders, while text has to go pale or it vanishes.
+   */
+  heading: '#2E1A0E',
+
+  /**
+   * The hero card stays espresso in BOTH themes. `primary` inverts to citrus
+   * in dark so that small filled buttons stay legible, but a large raised
+   * surface reads fine as espresso on near-black — and inverting it would
+   * swallow the citrus CTA sitting inside it.
+   */
+  heroFill: '#3A2112',
+  onHero: '#FFFBF4',
+  onHeroMuted: '#E4C9A8',
 } as const;
 
 export const dark = {
@@ -41,6 +60,12 @@ export const dark = {
   muted: '#A98D71',
   body: '#D8C4AC',
   onDark: '#A98D71',
+  // ink is near-black here for borders, so headings need their own pale value
+  // or every title renders black-on-black.
+  heading: '#F5E7D5',
+  heroFill: '#3A2112',
+  onHero: '#FFFBF4',
+  onHeroMuted: '#E4C9A8',
 } as const;
 
 export type Theme = typeof light;

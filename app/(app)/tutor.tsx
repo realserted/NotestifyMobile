@@ -18,7 +18,7 @@ export default function TutorScreen() {
         paddingHorizontal: layout.screenPad,
       }}
     >
-      <Text style={[type.screenTitle, { color: t.ink }]}>Tutor</Text>
+      <Text style={[type.screenTitle, { color: t.heading }]}>Tutor</Text>
       <Text style={[type.body, { color: t.muted, marginTop: 8 }]}>Screen 6 of the spec. Not built yet.</Text>
     </View>
   );

@@ -18,7 +18,7 @@ export default function YouScreen() {
         paddingHorizontal: layout.screenPad,
       }}
     >
-      <Text style={[type.screenTitle, { color: t.ink }]}>You</Text>
+      <Text style={[type.screenTitle, { color: t.heading }]}>You</Text>
       <Text style={[type.body, { color: t.muted, marginTop: 8 }]}>Screen 10 of the spec. Not built yet.</Text>
     </View>
   );

@@ -33,14 +33,14 @@ export default function ReviewScreen() {
         {({ pressed }) => (
           <Pop offset={0} radius={radius.pill} style={{ alignSelf: 'flex-start', opacity: pressed ? 0.6 : 1 }}>
             <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-              <X size={19} color={t.ink} strokeWidth={2.4} />
+              <X size={19} color={t.heading} strokeWidth={2.4} />
             </View>
           </Pop>
         )}
       </Pressable>
 
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={[type.sectionTitle, { color: t.ink }]}>Review</Text>
+        <Text style={[type.sectionTitle, { color: t.heading }]}>Review</Text>
         <Text style={[type.body, { color: t.muted, marginTop: 8, textAlign: 'center' }]}>
           The swipe-to-grade card is the last screen in the build order.
         </Text>

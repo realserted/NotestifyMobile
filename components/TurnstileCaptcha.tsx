@@ -31,14 +31,21 @@ export interface CaptchaHandle {
 
 interface Props {
   onToken: (token: string | null) => void;
+  /**
+   * Fired when no challenge can be obtained — the host page is unreachable, or
+   * the web app has captcha switched off. The form must stop waiting for a
+   * token when this fires, or its submit button hangs on "Verifying…" forever.
+   */
+  onUnavailable?: () => void;
 }
 
 export const TurnstileCaptcha = forwardRef<CaptchaHandle, Props>(function TurnstileCaptcha(
-  { onToken },
+  { onToken, onUnavailable },
   ref,
 ) {
   const webViewRef = useRef<WebView>(null);
   const [height, setHeight] = useState(70);
+  const [failed, setFailed] = useState(false);
 
   useImperativeHandle(ref, () => ({
     reset: () => {
@@ -67,7 +74,10 @@ export const TurnstileCaptcha = forwardRef<CaptchaHandle, Props>(function Turnst
           // Includes the case where the web app has captcha switched off.
           // Supabase is the real gate either way.
           onToken(null);
-          if (message.reason === 'captcha-disabled') setHeight(0);
+          if (message.reason === 'captcha-disabled') {
+            setHeight(0);
+            onUnavailable?.();
+          }
           break;
         default:
           break;
@@ -76,7 +86,7 @@ export const TurnstileCaptcha = forwardRef<CaptchaHandle, Props>(function Turnst
     [onToken],
   );
 
-  if (!CAPTCHA_URL) return null;
+  if (!CAPTCHA_URL || failed) return null;
 
   return (
     <View style={[styles.container, { height }]}>
@@ -84,6 +94,21 @@ export const TurnstileCaptcha = forwardRef<CaptchaHandle, Props>(function Turnst
         ref={webViewRef}
         source={{ uri: `${CAPTCHA_URL}?theme=light` }}
         onMessage={handleMessage}
+        // Without these the page's own 404 renders inside the login form. Treat
+        // any transport or HTTP failure as "no captcha available" and collapse,
+        // so the screen degrades to the Google button instead of showing a
+        // website error in the middle of the form.
+        onHttpError={() => {
+          onToken(null);
+          setFailed(true);
+          onUnavailable?.();
+        }}
+        onError={() => {
+          onToken(null);
+          setFailed(true);
+          onUnavailable?.();
+        }}
+        renderError={() => <View />}
         style={styles.webView}
         // A small transparent island, not a page — strip the usual chrome.
         scrollEnabled={false}

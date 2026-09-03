@@ -18,7 +18,7 @@ export default function DecksScreen() {
         paddingHorizontal: layout.screenPad,
       }}
     >
-      <Text style={[type.screenTitle, { color: t.ink }]}>Decks</Text>
+      <Text style={[type.screenTitle, { color: t.heading }]}>Decks</Text>
       <Text style={[type.body, { color: t.muted, marginTop: 8 }]}>Screen 2 of the spec. Not built yet.</Text>
     </View>
   );

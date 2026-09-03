@@ -67,9 +67,10 @@ export default function LoginScreen() {
   const [busy, setBusy] = useState<'google' | 'email' | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaMounted, setCaptchaMounted] = useState(false);
+  const [captchaUnavailable, setCaptchaUnavailable] = useState(false);
   const captchaRef = useRef<CaptchaHandle>(null);
 
-  const awaitingCaptcha = captchaMounted && captchaEnabled && !captchaToken;
+  const awaitingCaptcha = captchaMounted && captchaEnabled && !captchaUnavailable && !captchaToken;
 
   async function handleGoogle() {
     setBusy('google');
@@ -136,7 +137,7 @@ export default function LoginScreen() {
             paddingVertical: 15,
             fontSize: 16,
             fontFamily: type.body.fontFamily,
-            color: t.ink,
+            color: t.heading,
           }}
           {...extra}
         />
@@ -169,11 +170,11 @@ export default function LoginScreen() {
               backgroundColor: t.accent,
             }}
           />
-          <Text style={[type.deckTitle, { fontSize: 22, color: t.ink }]}>Notestify</Text>
+          <Text style={[type.deckTitle, { fontSize: 22, color: t.heading }]}>Notestify</Text>
         </View>
 
         <View style={{ marginTop: 48 }}>
-          <Text style={[type.screenTitle, { fontSize: 36, lineHeight: 39, color: t.ink }]}>
+          <Text style={[type.screenTitle, { fontSize: 36, lineHeight: 39, color: t.heading }]}>
             Welcome back
           </Text>
           <Text style={[type.bodyLarge, { fontSize: 15.5, color: t.body, marginTop: 8 }]}>
@@ -201,7 +202,11 @@ export default function LoginScreen() {
 
         {captchaMounted ? (
           <View style={{ marginTop: 14 }}>
-            <TurnstileCaptcha ref={captchaRef} onToken={setCaptchaToken} />
+            <TurnstileCaptcha
+              ref={captchaRef}
+              onToken={setCaptchaToken}
+              onUnavailable={() => setCaptchaUnavailable(true)}
+            />
           </View>
         ) : null}
 
@@ -250,11 +255,11 @@ export default function LoginScreen() {
                   }}
                 >
                   {busy === 'google' ? (
-                    <ActivityIndicator color={t.ink} />
+                    <ActivityIndicator color={t.heading} />
                   ) : (
                     <>
                       <GoogleMark />
-                      <Text style={[type.button, { fontSize: 15.5, color: t.ink }]}>
+                      <Text style={[type.button, { fontSize: 15.5, color: t.heading }]}>
                         Continue with Google
                       </Text>
                     </>

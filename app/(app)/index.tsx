@@ -61,7 +61,7 @@ export default function TodayScreen() {
           }}
         >
           <View style={{ flex: 1 }}>
-            <Text style={[type.screenTitle, { color: t.ink }]}>Hey, {firstName}</Text>
+            <Text style={[type.screenTitle, { color: t.heading }]}>Hey, {firstName}</Text>
             <Text style={[type.body, { color: t.body, marginTop: 5 }]}>{dateLabel}</Text>
           </View>
           <PopChip
@@ -71,12 +71,15 @@ export default function TodayScreen() {
           />
         </View>
 
-        <PopCard fill={t.primary} offset={pop.lg} radius={radius.xl}>
+        {/* heroFill, not primary: primary inverts to citrus in dark, which would
+            put a citrus CTA on a citrus card. The hero stays espresso in both
+            themes, so its on-colours are theme-independent too. */}
+        <PopCard fill={t.heroFill} offset={pop.lg} radius={radius.xl}>
           <View style={{ padding: 22 }}>
-            <Text style={[type.micro, { color: t.onDark }]}>Due today</Text>
+            <Text style={[type.micro, { color: t.onHeroMuted }]}>Due today</Text>
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginTop: 6 }}>
-              <Text style={[type.numeralXL, { color: t.surface }]}>{dueToday}</Text>
-              <Text style={[type.body, { color: t.onDark, paddingBottom: 8 }]}>
+              <Text style={[type.numeralXL, { color: t.onHero }]}>{dueToday}</Text>
+              <Text style={[type.body, { color: t.onHeroMuted, paddingBottom: 8 }]}>
                 {/* Roughly 3 cards a minute. */}
                 cards · about {Math.ceil(dueToday / 3)} min
               </Text>
@@ -114,7 +117,7 @@ export default function TodayScreen() {
                 alignItems: 'baseline',
               }}
             >
-              <Text style={[type.sectionTitle, { color: t.ink }]}>Today&apos;s goal</Text>
+              <Text style={[type.sectionTitle, { color: t.heading }]}>Today&apos;s goal</Text>
               <Text style={[type.buttonSmall, { color: t.body }]}>
                 {reviewedToday} / {dailyGoal}
               </Text>
@@ -142,7 +145,7 @@ export default function TodayScreen() {
               marginBottom: 10,
             }}
           >
-            <Text style={[type.sectionTitle, { color: t.ink }]}>Jump back in</Text>
+            <Text style={[type.sectionTitle, { color: t.heading }]}>Jump back in</Text>
             <Link href="/decks" style={[type.buttonSmall, { color: t.accentText }]}>
               All decks
             </Link>
@@ -170,7 +173,7 @@ export default function TodayScreen() {
                     }}
                   />
                   <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[type.rowTitle, { color: t.ink }]}>{d.title}</Text>
+                    <Text style={[type.rowTitle, { color: t.heading }]}>{d.title}</Text>
                     <Text style={[type.meta, { color: t.muted, marginTop: 2 }]}>
                       {d.due} due · {d.cards} cards
                     </Text>
@@ -194,7 +197,7 @@ export default function TodayScreen() {
 
         <PopCard>
           <View style={{ padding: 18 }}>
-            <Text style={[type.sectionTitle, { color: t.ink }]}>This week</Text>
+            <Text style={[type.sectionTitle, { color: t.heading }]}>This week</Text>
             <View
               style={{
                 flexDirection: 'row',

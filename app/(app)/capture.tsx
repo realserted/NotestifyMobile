@@ -18,7 +18,7 @@ export default function AddmaterialScreen() {
         paddingHorizontal: layout.screenPad,
       }}
     >
-      <Text style={[type.screenTitle, { color: t.ink }]}>Add material</Text>
+      <Text style={[type.screenTitle, { color: t.heading }]}>Add material</Text>
       <Text style={[type.body, { color: t.muted, marginTop: 8 }]}>Screen 7 of the spec. Not built yet.</Text>
     </View>
   );
