@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
@@ -7,6 +17,7 @@ import {
   NativeSignInUnavailableError,
   OAuthCancelledError,
   signInWithGoogle,
+  signInWithPassword,
 } from '../../lib/auth';
 import { Pop } from '../../components/Pop';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -31,25 +42,27 @@ const GoogleMark = () => (
 );
 
 /**
- * Sign in. Screen 12 of the spec, reduced to its one live path.
+ * Sign in. Screen 12 of the spec.
  *
- * The email and password fields the mockup shows are gone on purpose. Password
- * sign-in requires a Turnstile token, because Supabase enforces CAPTCHA
- * protection on every email-based endpoint project-wide — and the only way to
- * obtain one on a phone was a WebView pointed at notestify.com. Native Google
- * sign-in needs no captcha at all, so dropping the password path removed both
- * the WebView and the coupling to the website.
+ * Both paths are live and neither loads a WebView. Google is native and needs a
+ * development build; email and password works anywhere, including Expo Go, but
+ * requires the project's CAPTCHA protection to be off — there is no way to
+ * obtain a Turnstile token on a phone without embedding the website.
  *
- * Existing password-only accounts reach the app by signing in with Google on
- * the same address; Supabase links identities that share a verified email.
+ * Omitted from the mockup deliberately: "Forgot password?" and "Register",
+ * since neither route exists here.
  */
 export default function LoginScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [focused, setFocused] = useState<'email' | 'password' | null>(null);
+  const [busy, setBusy] = useState<'google' | 'email' | null>(null);
 
   async function handleGoogle() {
-    setIsSubmitting(true);
+    setBusy('google');
     try {
       await signInWithGoogle();
       // On success the root layout's auth listener handles the redirect.
@@ -64,76 +77,169 @@ export default function LoginScreen() {
         error instanceof Error ? error.message : 'Something went wrong. Please try again.',
       );
     } finally {
-      setIsSubmitting(false);
+      setBusy(null);
     }
   }
 
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: t.bg,
-        paddingTop: insets.top + 12,
-        paddingBottom: insets.bottom + 28,
-        paddingHorizontal: layout.screenPadWide,
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <View
+  async function handleEmail() {
+    if (!email.trim() || !password) {
+      Alert.alert('Missing details', 'Enter both your email and password.');
+      return;
+    }
+
+    setBusy('email');
+    try {
+      await signInWithPassword(email, password);
+    } catch (error) {
+      Alert.alert(
+        'Could not sign in',
+        error instanceof Error ? error.message : 'Something went wrong. Please try again.',
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const field = (
+    label: string,
+    value: string,
+    onChangeText: (next: string) => void,
+    name: 'email' | 'password',
+    extra: React.ComponentProps<typeof TextInput>,
+  ) => (
+    <View>
+      <Text style={[type.micro, { color: t.muted, marginBottom: 7 }]}>{label}</Text>
+      <Pop offset={focused === name ? pop.sm : 0} radius={radius.md}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          onFocus={() => setFocused(name)}
+          onBlur={() => setFocused((f) => (f === name ? null : f))}
+          placeholderTextColor={t.muted}
+          editable={busy === null}
           style={{
-            width: 16,
-            height: 16,
-            borderRadius: 5,
-            borderWidth: layout.borderWidth,
-            borderColor: t.ink,
-            backgroundColor: t.accent,
+            paddingHorizontal: 16,
+            paddingVertical: 15,
+            fontSize: 16,
+            fontFamily: type.body.fontFamily,
+            color: t.heading,
           }}
+          {...extra}
         />
-        <Text style={[type.deckTitle, { fontSize: 22, color: t.heading }]}>Notestify</Text>
-      </View>
-
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Text style={[type.screenTitle, { fontSize: 36, lineHeight: 39, color: t.heading }]}>
-          Welcome back
-        </Text>
-        <Text style={[type.bodyLarge, { fontSize: 15.5, color: t.body, marginTop: 8 }]}>
-          Pick up where you left off.
-        </Text>
-      </View>
-
-      {/* The primary action sits in the bottom third, where the thumb rests. */}
-      <View style={{ gap: 14 }}>
-        <Pressable onPress={handleGoogle} disabled={isSubmitting}>
-          {({ pressed }) => (
-            <Pop offset={pop.md} radius={radius.pill} pressed={pressed && !isSubmitting}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 10,
-                  minHeight: 54,
-                }}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color={t.heading} />
-                ) : (
-                  <>
-                    <GoogleMark />
-                    <Text style={[type.button, { fontSize: 15.5, color: t.heading }]}>
-                      Continue with Google
-                    </Text>
-                  </>
-                )}
-              </View>
-            </Pop>
-          )}
-        </Pressable>
-
-        <Text style={[type.meta, { color: t.muted, textAlign: 'center' }]}>
-          Use the same Google account you use on notestify.com.
-        </Text>
-      </View>
+      </Pop>
     </View>
+  );
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: t.bg }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: insets.top + 12,
+          paddingBottom: insets.bottom + 24,
+          paddingHorizontal: layout.screenPadWide,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View
+            style={{
+              width: 16,
+              height: 16,
+              borderRadius: 5,
+              borderWidth: layout.borderWidth,
+              borderColor: t.ink,
+              backgroundColor: t.accent,
+            }}
+          />
+          <Text style={[type.deckTitle, { fontSize: 22, color: t.heading }]}>Notestify</Text>
+        </View>
+
+        <View style={{ marginTop: 44 }}>
+          <Text style={[type.screenTitle, { fontSize: 36, lineHeight: 39, color: t.heading }]}>
+            Welcome back
+          </Text>
+          <Text style={[type.bodyLarge, { fontSize: 15.5, color: t.body, marginTop: 8 }]}>
+            Pick up where you left off.
+          </Text>
+        </View>
+
+        <View style={{ gap: layout.gap, marginTop: 28 }}>
+          {field('Email', email, setEmail, 'email', {
+            placeholder: 'you@uni.edu',
+            autoCapitalize: 'none',
+            autoComplete: 'email',
+            keyboardType: 'email-address',
+            textContentType: 'emailAddress',
+          })}
+          {field('Password', password, setPassword, 'password', {
+            placeholder: '••••••••',
+            autoCapitalize: 'none',
+            autoComplete: 'current-password',
+            textContentType: 'password',
+            secureTextEntry: true,
+            onSubmitEditing: handleEmail,
+          })}
+        </View>
+
+        {/* The primary action sits in the bottom third, where the thumb rests. */}
+        <View style={{ marginTop: 'auto', paddingTop: 32, gap: layout.gap }}>
+          <Pressable onPress={handleEmail} disabled={busy !== null}>
+            {({ pressed }) => (
+              <Pop
+                offset={pop.md}
+                radius={radius.pill}
+                fill={t.primary}
+                pressed={pressed && busy === null}
+              >
+                <View style={{ minHeight: 54, alignItems: 'center', justifyContent: 'center' }}>
+                  {busy === 'email' ? (
+                    <ActivityIndicator color={t.onPrimary} />
+                  ) : (
+                    <Text style={[type.button, { color: t.onPrimary }]}>Sign in</Text>
+                  )}
+                </View>
+              </Pop>
+            )}
+          </Pressable>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ flex: 1, height: 2, backgroundColor: t.divider }} />
+            <Text style={[type.micro, { color: t.muted }]}>or</Text>
+            <View style={{ flex: 1, height: 2, backgroundColor: t.divider }} />
+          </View>
+
+          <Pressable onPress={handleGoogle} disabled={busy !== null}>
+            {({ pressed }) => (
+              <Pop offset={0} radius={radius.pill} pressed={pressed && busy === null}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                    minHeight: 54,
+                  }}
+                >
+                  {busy === 'google' ? (
+                    <ActivityIndicator color={t.heading} />
+                  ) : (
+                    <>
+                      <GoogleMark />
+                      <Text style={[type.button, { fontSize: 15.5, color: t.heading }]}>
+                        Continue with Google
+                      </Text>
+                    </>
+                  )}
+                </View>
+              </Pop>
+            )}
+          </Pressable>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

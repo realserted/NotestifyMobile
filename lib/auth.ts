@@ -1,23 +1,32 @@
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+
 import { supabase } from './supabase';
 
 /**
- * Native Google sign-in.
+ * Authentication.
  *
- * This replaces the browser-based OAuth handshake. The old flow opened
- * Supabase's /authorize endpoint in the system browser and relied on a deep
- * link coming back, which meant an allowlisted redirect URL per machine and a
- * silent fall back to the web app's Site URL whenever that URL did not match.
+ * Two paths:
  *
- * Here the Google SDK shows the OS account sheet, returns an ID token, and that
- * token is exchanged with Supabase directly. No browser, no redirect URL, and
- * no captcha — Google performs the bot resistance that Supabase's CAPTCHA
- * protection would otherwise demand.
- *
- * Requires a development build; the native module does not exist in Expo Go.
+ * - Google, native. The Google SDK shows the OS account sheet and returns an
+ *   ID token that goes straight to supabase.auth.signInWithIdToken. No browser,
+ *   no redirect URL, no captcha. Needs a development build.
+ * - Email and password, straight to Supabase. Needs CAPTCHA protection to be
+ *   OFF for the project, since there is no way to obtain a Turnstile token on a
+ *   phone without embedding a WebView.
  */
 
 const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+
+/**
+ * Expo Go has no native Google module.
+ *
+ * This is checked up front rather than by catching a failed require. Metro
+ * caches a module that threw while initialising, so a second require hands back
+ * a half-built object instead of throwing again — which surfaced as "Cannot
+ * read property 'GoogleSignin' of undefined" rather than anything meaningful.
+ */
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 export class OAuthCancelledError extends Error {
   constructor() {
@@ -30,10 +39,22 @@ export class OAuthCancelledError extends Error {
 export class NativeSignInUnavailableError extends Error {
   constructor() {
     super(
-      'Google sign-in needs a development build of Notestify. It cannot run in ' +
-        'Expo Go, which has no native Google module.',
+      'Google sign-in needs a development build of Notestify. Use email and ' +
+        'password in Expo Go, or run a dev build to test the native flow.',
     );
     this.name = 'NativeSignInUnavailableError';
+  }
+}
+
+/** Raised when the project still has CAPTCHA protection switched on. */
+export class CaptchaRequiredError extends Error {
+  constructor() {
+    super(
+      'This Supabase project still requires a captcha for password sign-in. ' +
+        'Turn CAPTCHA protection off under Authentication → Settings, or use ' +
+        'Google instead.',
+    );
+    this.name = 'CaptchaRequiredError';
   }
 }
 
@@ -42,26 +63,21 @@ type GoogleSigninModule = typeof import('@react-native-google-signin/google-sign
 let cached: GoogleSigninModule | null = null;
 let configured = false;
 
-/**
- * Loads the SDK on first use.
- *
- * This is deliberately a lazy require rather than a top-level import. The
- * package resolves its native spec through TurboModuleRegistry.getEnforcing at
- * module scope, which throws in Expo Go — and an import would run that during
- * route loading, crashing the entire app at startup instead of failing only
- * when someone taps sign in.
- */
 function loadGoogleSignin(): GoogleSigninModule {
+  if (isExpoGo) throw new NativeSignInUnavailableError();
   if (cached) return cached;
 
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    cached = require('@react-native-google-signin/google-signin') as GoogleSigninModule;
-  } catch {
-    throw new NativeSignInUnavailableError();
-  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('@react-native-google-signin/google-signin') as
+    | GoogleSigninModule
+    | undefined;
 
-  return cached;
+  // A dev build missing the native side yields a module whose exports never
+  // finished initialising, so check rather than trusting the require.
+  if (!mod?.GoogleSignin) throw new NativeSignInUnavailableError();
+
+  cached = mod;
+  return mod;
 }
 
 function configure(mod: GoogleSigninModule) {
@@ -75,8 +91,7 @@ function configure(mod: GoogleSigninModule) {
   }
 
   mod.GoogleSignin.configure({
-    // The audience Supabase expects on the ID token — the same web client the
-    // notestify.com app already uses.
+    // The audience Supabase expects — the same web client notestify.com uses.
     webClientId,
     // Lets iOS issue the token for this app rather than for the web client.
     iosClientId,
@@ -84,6 +99,9 @@ function configure(mod: GoogleSigninModule) {
 
   configured = true;
 }
+
+/** True when the native Google module is actually usable in this runtime. */
+export const googleSignInAvailable = !isExpoGo;
 
 /**
  * Runs the native sign-in and leaves a Supabase session in place on success.
@@ -130,13 +148,30 @@ export async function signInWithGoogle(): Promise<void> {
   if (error) throw error;
 }
 
+/** Email and password sign-in. */
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  const { error } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+
+  if (!error) return;
+
+  // Supabase reports the captcha gate as a generic error; give it a name so the
+  // UI can explain the fix instead of showing raw API wording.
+  if (/captcha/i.test(error.message)) throw new CaptchaRequiredError();
+
+  throw error;
+}
+
 /** Clears the Google session too, so the next sign-in shows the picker. */
 export async function signOutGoogle(): Promise<void> {
+  if (isExpoGo) return;
+
   try {
     const mod = loadGoogleSignin();
     await mod.GoogleSignin.signOut();
   } catch {
-    // Never block a Supabase sign-out on the Google SDK — and in Expo Go the
-    // module is not there at all.
+    // Never block a Supabase sign-out on the Google SDK.
   }
 }
