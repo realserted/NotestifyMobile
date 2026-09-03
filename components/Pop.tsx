@@ -52,7 +52,13 @@ export function Pop({
           borderColor: t.ink,
           backgroundColor: fill ?? t.surface,
           overflow: 'hidden',
-          transform: pressed ? [{ translateX: offset }, { translateY: offset }] : undefined,
+          // Always an array. Toggling this between an array and `undefined`
+          // makes Fabric's prop diff hand `null` to processTransform, which
+          // crashes the render with "Cannot read property 'forEach' of null".
+          transform: [
+            { translateX: pressed ? offset : 0 },
+            { translateY: pressed ? offset : 0 },
+          ],
         }}
       >
         {children}

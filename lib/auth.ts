@@ -1,30 +1,52 @@
-import * as Linking from 'expo-linking';
-import * as WebBrowser from 'expo-web-browser';
+import {
+  GoogleSignin,
+  isErrorWithCode,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
 
 import { supabase } from './supabase';
 
 /**
- * OAuth sign-in for native.
+ * Native Google sign-in.
  *
- * The app never talks to Google directly. It opens Supabase's /authorize
- * endpoint in the system browser; Google redirects back to Supabase's own
- * https callback (already registered in the Google console for the web app),
- * and Supabase then redirects to the deep link below. That indirection is why
- * no Google Cloud configuration is needed for mobile.
+ * This replaces the browser-based OAuth handshake. The old flow opened
+ * Supabase's /authorize endpoint in the system browser and relied on a deep
+ * link coming back, which meant an allowlisted redirect URL per machine and a
+ * silent fall back to the web app's Site URL whenever that URL did not match.
+ *
+ * Here the Google SDK shows the OS account sheet, returns an ID token, and that
+ * token is exchanged with Supabase directly. No browser, no redirect URL, and
+ * no captcha — Google performs the bot resistance that Supabase's CAPTCHA
+ * protection would otherwise demand.
+ *
+ * Requires a development build. The native module does not exist in Expo Go.
  */
 
-// Dismisses the auth browser if one was left open by a previous attempt.
-WebBrowser.maybeCompleteAuthSession();
+const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 
-/**
- * In Expo Go this resolves to an exp:// URL that encodes the dev server's LAN
- * address, so it changes with the network. In a standalone build it is
- * notestifymobile://auth/callback. Both shapes must be allowed in the Supabase
- * dashboard under Authentication -> URL Configuration.
- */
-export const oauthRedirectUri = Linking.createURL('/auth/callback');
+let configured = false;
 
-export type OAuthProvider = 'google' | 'apple';
+function configure() {
+  if (configured) return;
+
+  if (!webClientId) {
+    throw new Error(
+      'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Supabase validates the ID ' +
+        'token against this client, so sign-in cannot work without it.',
+    );
+  }
+
+  GoogleSignin.configure({
+    // The audience Supabase expects on the ID token. This is the same web
+    // client the notestify.com app already uses.
+    webClientId,
+    // Lets iOS issue the token for this app rather than the web client.
+    iosClientId,
+  });
+
+  configured = true;
+}
 
 export class OAuthCancelledError extends Error {
   constructor() {
@@ -33,41 +55,72 @@ export class OAuthCancelledError extends Error {
   }
 }
 
+/** Signals a build that lacks the native module — i.e. Expo Go. */
+export class NativeSignInUnavailableError extends Error {
+  constructor() {
+    super(
+      'Google sign-in needs a development build of Notestify. It cannot run ' +
+        'inside Expo Go, which has no native Google module.',
+    );
+    this.name = 'NativeSignInUnavailableError';
+  }
+}
+
 /**
- * Runs the full OAuth handshake and leaves a session in place on success.
+ * Runs the native sign-in and leaves a Supabase session in place on success.
  *
- * Throws OAuthCancelledError if the user backed out, so callers can stay quiet
- * rather than showing an error for a deliberate action.
+ * Throws OAuthCancelledError when the user dismisses the sheet, so callers can
+ * stay quiet rather than showing an error for a deliberate action.
  */
-export async function signInWithProvider(provider: OAuthProvider): Promise<void> {
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo: oauthRedirectUri,
-      // Without this the client tries to navigate the page itself, which is a
-      // no-op on native and leaves the promise resolved with nothing to open.
-      skipBrowserRedirect: true,
-    },
+export async function signInWithGoogle(): Promise<void> {
+  try {
+    configure();
+  } catch (error) {
+    // A missing native module surfaces here as a TypeError on GoogleSignin.
+    if (error instanceof TypeError) throw new NativeSignInUnavailableError();
+    throw error;
+  }
+
+  // Android needs Play Services; on iOS this resolves immediately.
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+  let idToken: string | null = null;
+
+  try {
+    const response = await GoogleSignin.signIn();
+
+    if (response.type === 'cancelled') throw new OAuthCancelledError();
+    idToken = response.data?.idToken ?? null;
+  } catch (error) {
+    if (error instanceof OAuthCancelledError) throw error;
+
+    if (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_CANCELLED) {
+      throw new OAuthCancelledError();
+    }
+
+    throw error;
+  }
+
+  if (!idToken) {
+    throw new Error('Google did not return an ID token. Please try again.');
+  }
+
+  // Supabase verifies the token's signature and audience, then mints its own
+  // session. The account is linked by verified email, so this lands in the same
+  // user record as the web app.
+  const { error } = await supabase.auth.signInWithIdToken({
+    provider: 'google',
+    token: idToken,
   });
 
   if (error) throw error;
-  if (!data.url) throw new Error('Supabase did not return an authorization URL.');
+}
 
-  const result = await WebBrowser.openAuthSessionAsync(data.url, oauthRedirectUri);
-
-  if (result.type !== 'success') throw new OAuthCancelledError();
-
-  const url = new URL(result.url);
-
-  // The provider reports refusals on the redirect rather than by failing.
-  const description = url.searchParams.get('error_description') ?? url.searchParams.get('error');
-  if (description) throw new Error(description);
-
-  const code = url.searchParams.get('code');
-  if (!code) throw new Error('No authorization code was returned. Please try again.');
-
-  // PKCE: pairs the code with the verifier this client stored when it built
-  // the authorize URL, then writes the session to AsyncStorage.
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-  if (exchangeError) throw exchangeError;
+/** Clears the Google session too, so the next sign-in shows the picker. */
+export async function signOutGoogle(): Promise<void> {
+  try {
+    await GoogleSignin.signOut();
+  } catch {
+    // Never block a Supabase sign-out on the Google SDK.
+  }
 }
