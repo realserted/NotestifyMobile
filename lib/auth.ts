@@ -1,9 +1,3 @@
-import {
-  GoogleSignin,
-  isErrorWithCode,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
-
 import { supabase } from './supabase';
 
 /**
@@ -19,34 +13,11 @@ import { supabase } from './supabase';
  * no captcha — Google performs the bot resistance that Supabase's CAPTCHA
  * protection would otherwise demand.
  *
- * Requires a development build. The native module does not exist in Expo Go.
+ * Requires a development build; the native module does not exist in Expo Go.
  */
 
 const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
-
-let configured = false;
-
-function configure() {
-  if (configured) return;
-
-  if (!webClientId) {
-    throw new Error(
-      'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Supabase validates the ID ' +
-        'token against this client, so sign-in cannot work without it.',
-    );
-  }
-
-  GoogleSignin.configure({
-    // The audience Supabase expects on the ID token. This is the same web
-    // client the notestify.com app already uses.
-    webClientId,
-    // Lets iOS issue the token for this app rather than the web client.
-    iosClientId,
-  });
-
-  configured = true;
-}
 
 export class OAuthCancelledError extends Error {
   constructor() {
@@ -55,15 +26,63 @@ export class OAuthCancelledError extends Error {
   }
 }
 
-/** Signals a build that lacks the native module — i.e. Expo Go. */
+/** Signals a runtime without the native module — i.e. Expo Go. */
 export class NativeSignInUnavailableError extends Error {
   constructor() {
     super(
-      'Google sign-in needs a development build of Notestify. It cannot run ' +
-        'inside Expo Go, which has no native Google module.',
+      'Google sign-in needs a development build of Notestify. It cannot run in ' +
+        'Expo Go, which has no native Google module.',
     );
     this.name = 'NativeSignInUnavailableError';
   }
+}
+
+type GoogleSigninModule = typeof import('@react-native-google-signin/google-signin');
+
+let cached: GoogleSigninModule | null = null;
+let configured = false;
+
+/**
+ * Loads the SDK on first use.
+ *
+ * This is deliberately a lazy require rather than a top-level import. The
+ * package resolves its native spec through TurboModuleRegistry.getEnforcing at
+ * module scope, which throws in Expo Go — and an import would run that during
+ * route loading, crashing the entire app at startup instead of failing only
+ * when someone taps sign in.
+ */
+function loadGoogleSignin(): GoogleSigninModule {
+  if (cached) return cached;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    cached = require('@react-native-google-signin/google-signin') as GoogleSigninModule;
+  } catch {
+    throw new NativeSignInUnavailableError();
+  }
+
+  return cached;
+}
+
+function configure(mod: GoogleSigninModule) {
+  if (configured) return;
+
+  if (!webClientId) {
+    throw new Error(
+      'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Supabase validates the ID ' +
+        "token's audience against this client, so sign-in cannot work without it.",
+    );
+  }
+
+  mod.GoogleSignin.configure({
+    // The audience Supabase expects on the ID token — the same web client the
+    // notestify.com app already uses.
+    webClientId,
+    // Lets iOS issue the token for this app rather than for the web client.
+    iosClientId,
+  });
+
+  configured = true;
 }
 
 /**
@@ -73,28 +92,23 @@ export class NativeSignInUnavailableError extends Error {
  * stay quiet rather than showing an error for a deliberate action.
  */
 export async function signInWithGoogle(): Promise<void> {
-  try {
-    configure();
-  } catch (error) {
-    // A missing native module surfaces here as a TypeError on GoogleSignin.
-    if (error instanceof TypeError) throw new NativeSignInUnavailableError();
-    throw error;
-  }
+  const mod = loadGoogleSignin();
+  configure(mod);
 
   // Android needs Play Services; on iOS this resolves immediately.
-  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  await mod.GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
   let idToken: string | null = null;
 
   try {
-    const response = await GoogleSignin.signIn();
+    const response = await mod.GoogleSignin.signIn();
 
     if (response.type === 'cancelled') throw new OAuthCancelledError();
     idToken = response.data?.idToken ?? null;
   } catch (error) {
     if (error instanceof OAuthCancelledError) throw error;
 
-    if (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_CANCELLED) {
+    if (mod.isErrorWithCode(error) && error.code === mod.statusCodes.SIGN_IN_CANCELLED) {
       throw new OAuthCancelledError();
     }
 
@@ -106,7 +120,7 @@ export async function signInWithGoogle(): Promise<void> {
   }
 
   // Supabase verifies the token's signature and audience, then mints its own
-  // session. The account is linked by verified email, so this lands in the same
+  // session. Identities are linked by verified email, so this lands in the same
   // user record as the web app.
   const { error } = await supabase.auth.signInWithIdToken({
     provider: 'google',
@@ -119,8 +133,10 @@ export async function signInWithGoogle(): Promise<void> {
 /** Clears the Google session too, so the next sign-in shows the picker. */
 export async function signOutGoogle(): Promise<void> {
   try {
-    await GoogleSignin.signOut();
+    const mod = loadGoogleSignin();
+    await mod.GoogleSignin.signOut();
   } catch {
-    // Never block a Supabase sign-out on the Google SDK.
+    // Never block a Supabase sign-out on the Google SDK — and in Expo Go the
+    // module is not there at all.
   }
 }
