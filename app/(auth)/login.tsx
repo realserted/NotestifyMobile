@@ -1,122 +1,90 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import { Link } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 
-import {
-  TurnstileCaptcha,
-  captchaEnabled,
-  type CaptchaHandle,
-} from '../../components/TurnstileCaptcha';
-import { supabase } from '../../lib/supabase';
+import { OAuthCancelledError, signInWithProvider } from '../../lib/auth';
 
+const GoogleMark = () => (
+  <Svg viewBox="0 0 18 18" width={18} height={18}>
+    <Path
+      fill="#4285F4"
+      d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62Z"
+    />
+    <Path
+      fill="#34A853"
+      d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18Z"
+    />
+    <Path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3-2.33Z" />
+    <Path
+      fill="#EA4335"
+      d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3 2.33C4.68 5.16 6.66 3.58 9 3.58Z"
+    />
+  </Svg>
+);
+
+/**
+ * Single auth screen.
+ *
+ * With OAuth there is no separate sign-up step — the first Google sign-in
+ * creates the account, and every one after that signs in to it.
+ */
 export default function LoginScreen() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const captchaRef = useRef<CaptchaHandle>(null);
 
-  async function handleSignIn() {
-    if (!email.trim() || !password) {
-      Alert.alert('Missing details', 'Enter both your email and password.');
-      return;
-    }
-
+  async function handleGoogle() {
     setIsSubmitting(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-      options: captchaToken ? { captchaToken } : undefined,
-    });
-    setIsSubmitting(false);
-
-    if (error) {
-      // The token is spent whether or not the credentials were right, so always
-      // pull a fresh challenge before the next attempt.
-      captchaRef.current?.reset();
-      Alert.alert('Could not sign in', error.message);
-      return;
+    try {
+      await signInWithProvider('google');
+      // On success the root layout's auth listener handles the redirect.
+    } catch (error) {
+      // Backing out of the browser is a deliberate action, not a failure.
+      if (!(error instanceof OAuthCancelledError)) {
+        Alert.alert(
+          'Could not sign in',
+          error instanceof Error ? error.message : 'Something went wrong. Please try again.',
+        );
+      }
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // No manual navigation needed — onAuthStateChange in the root layout picks
-    // up the new session and redirects out of the (auth) group.
   }
 
-  const awaitingCaptcha = captchaEnabled && !captchaToken;
-
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View style={styles.form}>
-        <Text style={styles.title}>Welcome back</Text>
-        <Text style={styles.subtitle}>Sign in to continue to Notestify.</Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#9ca3af"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          autoComplete="email"
-          keyboardType="email-address"
-          textContentType="emailAddress"
-          editable={!isSubmitting}
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#9ca3af"
-          value={password}
-          onChangeText={setPassword}
-          autoCapitalize="none"
-          autoComplete="current-password"
-          textContentType="password"
-          secureTextEntry
-          editable={!isSubmitting}
-          onSubmitEditing={handleSignIn}
-        />
-
-        <TurnstileCaptcha ref={captchaRef} onToken={setCaptchaToken} />
+    <View style={styles.container}>
+      <View style={styles.content}>
+        <Text style={styles.title}>Notestify</Text>
+        <Text style={styles.subtitle}>Sign in to pick up where you left off.</Text>
 
         <Pressable
           style={({ pressed }) => [
             styles.button,
-            (pressed || isSubmitting || awaitingCaptcha) && styles.buttonPressed,
+            (pressed || isSubmitting) && styles.buttonPressed,
           ]}
-          onPress={handleSignIn}
-          disabled={isSubmitting || awaitingCaptcha}
+          onPress={handleGoogle}
+          disabled={isSubmitting}
         >
           {isSubmitting ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color="#374151" />
           ) : (
-            <Text style={styles.buttonText}>
-              {awaitingCaptcha ? 'Verifying…' : 'Sign In'}
-            </Text>
+            <>
+              <GoogleMark />
+              <Text style={styles.buttonText}>Continue with Google</Text>
+            </>
           )}
         </Pressable>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
-          <Link href="/signup" style={styles.link}>
-            Sign up
-          </Link>
-        </View>
+        <Text style={styles.legal}>
+          Use the same Google account you use on notestify.com.
+        </Text>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -126,58 +94,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#ffffff',
   },
-  form: {
+  content: {
     paddingHorizontal: 24,
     gap: 12,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '700',
     color: '#111827',
   },
   subtitle: {
     fontSize: 15,
     color: '#6b7280',
-    marginBottom: 12,
+    marginBottom: 20,
   },
-  input: {
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    minHeight: 50,
     borderWidth: 1,
     borderColor: '#d1d5db',
     borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#111827',
+    paddingVertical: 14,
     backgroundColor: '#ffffff',
   },
-  button: {
-    backgroundColor: '#4f46e5',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
   buttonPressed: {
-    opacity: 0.75,
+    opacity: 0.6,
   },
   buttonText: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+    color: '#374151',
   },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  footerText: {
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  link: {
-    color: '#4f46e5',
-    fontSize: 14,
-    fontWeight: '600',
+  legal: {
+    fontSize: 13,
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });

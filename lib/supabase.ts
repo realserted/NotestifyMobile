@@ -29,8 +29,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     // Only relevant for browser OAuth redirects; on native there is no URL to
-    // read the session back out of.
+    // read the session back out of — the deep link handler in lib/auth.ts
+    // exchanges the code by hand instead.
     detectSessionInUrl: false,
+    // PKCE keeps the token exchange off the redirect URL. That matters more on
+    // mobile than on web: a deep link can be observed by other apps, so the
+    // code alone must not be enough to mint a session without the verifier
+    // held in this client's storage.
+    flowType: 'pkce',
   },
 });
 
